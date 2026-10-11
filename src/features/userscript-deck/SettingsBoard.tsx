@@ -505,8 +505,8 @@ export function SettingsBoard({
   const [updateEnabledOnly, setUpdateEnabledOnly] = useState(true);
   const [lastUpdateCheckAt, setLastUpdateCheckAt] = useState(0);
   const [assistantPanelMode, setAssistantPanelMode] = useState<
-    'sidePanel' | 'popup'
-  >('sidePanel');
+    'sidePanel' | 'popup' | undefined
+  >(undefined);
   const [deckShortcut, setDeckShortcut] = useState(DEFAULT_DECK_SHORTCUT);
   const [busy, setBusy] = useState<BusyState>('load');
   const [status, setStatus] = useState('');
@@ -574,7 +574,7 @@ export function SettingsBoard({
         reloadAfterScriptChange,
         updateIntervalDays,
         updateEnabledOnly,
-        assistantPanelMode,
+        assistantPanelMode: assistantPanelMode ?? 'sidePanel',
       });
       setReloadAfterScriptChange(settings.reloadAfterScriptChange);
       setUpdateIntervalDays(settings.updateIntervalDays);

@@ -3,7 +3,10 @@ import type {
   AssistantSurfaceNavigationMessage,
   AssistantWorkbenchTab,
 } from '../../ai/domain/types';
-import { USERSCRIPT_SETTINGS_STORAGE_KEY } from '../../userscript/application/settings';
+import {
+  DEFAULT_USERSCRIPT_SETTINGS,
+  USERSCRIPT_SETTINGS_STORAGE_KEY,
+} from '../../userscript/application/settings';
 import type { ExtensionBackgroundApi, ExtensionPort } from './api';
 import {
   assistantSurfaceLifecyclePortTabId,
@@ -66,17 +69,22 @@ export function normalizeAssistantPanelMode(
 /**
  * Read the assistant panel mode from the userscript settings store.
  *
- * Falls back to 'sidePanel' if no preference has been persisted yet.
+ * Requires that ensureDefaultAssistantPanelMode() has already been called
+ * at startup — if the storage key has never been written, this throws.
  */
-async function readAssistantPanelMode(
+export async function readAssistantPanelMode(
   api: ExtensionBackgroundApi,
 ): Promise<AssistantPanelMode> {
   const stored = (await api.storage.local.get(USERSCRIPT_SETTINGS_STORAGE_KEY))[
     USERSCRIPT_SETTINGS_STORAGE_KEY
-  ];
-  return normalizeAssistantPanelMode(
-    (stored as { assistantPanelMode?: string } | undefined)?.assistantPanelMode,
-  );
+  ] as { assistantPanelMode?: string } | undefined;
+  if (stored?.assistantPanelMode === undefined) {
+    throw new Error(
+      `AssistantPanelMode not found in storage. ` +
+        `ensureDefaultAssistantPanelMode() must be called at startup first.`,
+    );
+  }
+  return normalizeAssistantPanelMode(stored?.assistantPanelMode);
 }
 
 function createAssistantSurface(
@@ -116,6 +124,28 @@ function createAssistantSurface(
   };
 }
 
+/**
+ * Ensure the userscript settings storage has a default assistantPanelMode.
+ *
+ * Must be called at extension startup (Service Worker init / install / startup)
+ * before any factory or UI is created. After this returns, storage is guaranteed
+ * to contain a valid assistantPanelMode value.
+ */
+export async function ensureDefaultAssistantPanelMode(
+  api: ExtensionBackgroundApi,
+): Promise<void> {
+  const stored = (await api.storage.local.get(USERSCRIPT_SETTINGS_STORAGE_KEY))[
+    USERSCRIPT_SETTINGS_STORAGE_KEY
+  ] as { assistantPanelMode?: string } | undefined;
+  if (stored?.assistantPanelMode !== undefined) return; // already initialised
+  await api.storage.local.set({
+    [USERSCRIPT_SETTINGS_STORAGE_KEY]: {
+      ...DEFAULT_USERSCRIPT_SETTINGS,
+      assistantPanelMode: 'sidePanel',
+    },
+  });
+}
+
 export class AssistantSurfaceCoordinator {
   private readonly activePanels = new Map<number, ExtensionPort>();
   private readonly openingTabs = new Set<number>();
@@ -124,11 +154,10 @@ export class AssistantSurfaceCoordinator {
 
   constructor(
     private readonly api: ExtensionBackgroundApi,
+    private readonly mode: AssistantPanelMode,
     private readonly reportFailure: SurfaceFailureReporter = () => undefined,
   ) {
-    // Default to sidePanel (or browser-capability fallback) at construction
-    // so that surface.configure is available synchronously for install().
-    this.surface = createAssistantSurface(this.api, 'sidePanel');
+    this.surface = createAssistantSurface(this.api, this.mode);
   }
 
   install() {
