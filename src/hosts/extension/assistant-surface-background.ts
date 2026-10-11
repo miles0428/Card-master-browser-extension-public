@@ -51,7 +51,39 @@ async function openPopupSurface(api: ExtensionBackgroundApi, path: string) {
   await api.tabs.create({ url });
 }
 
-function createAssistantSurface(api: ExtensionBackgroundApi): AssistantSurface {
+export type AssistantPanelMode = 'sidePanel' | 'popup';
+
+export const ASSISTANT_PANEL_MODE_STORAGE_KEY =
+  'assistant-panel-mode.v1';
+
+export const defaultAssistantPanelMode = (): AssistantPanelMode =>
+  'sidePanel';
+
+export function normalizeAssistantPanelMode(
+  value: unknown,
+): AssistantPanelMode {
+  if (value === 'popup') return 'popup';
+  return 'sidePanel';
+}
+
+async function readAssistantPanelMode(
+  api: ExtensionBackgroundApi,
+): Promise<AssistantPanelMode> {
+  const stored = (
+    await api.storage.local.get(ASSISTANT_PANEL_MODE_STORAGE_KEY)
+  )[ASSISTANT_PANEL_MODE_STORAGE_KEY];
+  return normalizeAssistantPanelMode(stored);
+}
+
+function createAssistantSurface(
+  api: ExtensionBackgroundApi,
+  preference: AssistantPanelMode,
+): AssistantSurface {
+  if (preference === 'popup') {
+    return {
+      open: (_tabId, path) => openPopupSurface(api, path),
+    };
+  }
   const sidePanel = api.sidePanel;
   if (sidePanel?.open && sidePanel.setOptions) {
     return {
@@ -90,7 +122,9 @@ export class AssistantSurfaceCoordinator {
     private readonly api: ExtensionBackgroundApi,
     private readonly reportFailure: SurfaceFailureReporter = () => undefined,
   ) {
-    this.surface = createAssistantSurface(api);
+    // Default to sidePanel (or browser-capability fallback) at construction
+    // so that surface.configure is available synchronously for install().
+    this.surface = createAssistantSurface(this.api, 'sidePanel');
   }
 
   install() {
@@ -118,7 +152,27 @@ export class AssistantSurfaceCoordinator {
     this.configureExistingTabsInBackground();
   }
 
-  async open(tabId: number, tab?: AssistantWorkbenchTab) {
+  /**
+   * Open the assistant surface for the given tab.
+   *
+   * @param tabId  - Target tab id
+   * @param tab    - Optional workbench tab to navigate to
+   * @param panelMode - Optional panel mode override. When provided, the surface
+   *                    is created with the given preference instead of the default.
+   *                    Caller should read storage while still in user gesture.
+   */
+  async open(
+    tabId: number,
+    tab?: AssistantWorkbenchTab,
+    panelMode?: AssistantPanelMode,
+  ) {
+    // If caller provides panelMode, create a surface on the fly (override).
+    // This is non-default: the normal path uses the constructor surface.
+    const surface =
+      panelMode !== undefined
+        ? createAssistantSurface(this.api, panelMode)
+        : this.surface;
+
     const activePanel = this.activePanels.get(tabId);
     if (tab) this.requestedTabs.set(tabId, tab);
     if (activePanel && tab) {
@@ -128,16 +182,21 @@ export class AssistantSurfaceCoordinator {
       };
       activePanel.postMessage(message);
     }
-    const configuration = this.configure(tabId).catch((error) => {
-      this.reportFailure('tab-configuration-failed', error, { tabId });
-    });
+    const configuration = this.configureWithSurface(surface, tabId).catch(
+      (error) => {
+        this.reportFailure('tab-configuration-failed', error, { tabId });
+      },
+    );
     if (activePanel || this.openingTabs.has(tabId)) {
       await configuration;
       return;
     }
     this.openingTabs.add(tabId);
     try {
-      await this.surface.open(tabId, assistantSurfacePath(tabId));
+      // surface.open() must be the first awaited operation after any
+      // user-gesture-dependent step. Do not introduce an await between
+      // the gesture context and this call.
+      await surface.open(tabId, assistantSurfacePath(tabId));
     } catch (error) {
       if (
         !(error instanceof FirefoxSidebarUserActionRequiredError) &&
@@ -173,11 +232,18 @@ export class AssistantSurfaceCoordinator {
     };
   }
 
-  private configure(tabId: number) {
+  private configureWithSurface(surface: AssistantSurface, tabId: number) {
     return (
-      this.surface.configure?.(tabId, assistantSurfacePath(tabId)) ??
+      surface.configure?.(tabId, assistantSurfacePath(tabId)) ??
       Promise.resolve()
     );
+  }
+
+  private configure(tabId: number) {
+    return readAssistantPanelMode(this.api).then((panelMode) => {
+      const surface = createAssistantSurface(this.api, panelMode);
+      return this.configureWithSurface(surface, tabId);
+    });
   }
 
   private configureInBackground(tabId: number) {

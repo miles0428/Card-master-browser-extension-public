@@ -42,6 +42,14 @@ function api() {
       open,
       setOptions,
     },
+    storage: {
+      local: {
+        get: vi.fn(
+          async (key: string) =>
+            key === 'assistant-panel-mode.v1' ? {} : {},
+        ),
+      },
+    },
   } as unknown as ExtensionBackgroundApi;
   return { onConnect, onCreated, open, setOptions, value };
 }

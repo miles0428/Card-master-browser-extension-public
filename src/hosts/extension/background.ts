@@ -64,7 +64,11 @@ import {
 import { resolveAssistantPageAttachment } from './assistant-page-observer';
 import { parseAssistantPortName } from './assistant-protocol';
 import { ExtensionAssistantService } from './assistant-service';
-import { AssistantSurfaceCoordinator } from './assistant-surface-background';
+import {
+  ASSISTANT_PANEL_MODE_STORAGE_KEY,
+  AssistantSurfaceCoordinator,
+  normalizeAssistantPanelMode,
+} from './assistant-surface-background';
 import { mergeAutomaticUserscriptUpdates } from './automatic-update-commit';
 import { BackgroundEventBroadcaster } from './background-event-broadcaster';
 import { installBackgroundLifecycle } from './background-lifecycle';
@@ -903,10 +907,34 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
       );
       return true;
     }
-    void assistantSurface
-      .open(tabId, message.tab)
+    // Read panel mode preference while still in user-gesture context, then
+    // pass it to open() so surface creation is synchronous (no async between
+    // surface.open() and user gesture).
+    void api.storage.local
+      .get(ASSISTANT_PANEL_MODE_STORAGE_KEY)
+      .then((stored) => {
+        const panelMode = normalizeAssistantPanelMode(
+          stored[ASSISTANT_PANEL_MODE_STORAGE_KEY],
+        );
+        return assistantSurface.open(tabId, message.tab, panelMode);
+      })
       .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse(userscriptBackgroundErrorResponse(error)));
+    return true;
+  }
+  // External userscript bridge: allow userscripts to read assistantPanelMode setting
+  // Userscript calls: chrome.runtime.sendMessage({ type: 'assistant-panel-mode-get' })
+  // Response: { assistantPanelMode: 'sidePanel' | 'popup' }
+  if (message.type === 'assistant-panel-mode-get') {
+    void api.storage.local.get(ASSISTANT_PANEL_MODE_STORAGE_KEY).then(
+      (stored) => {
+        sendResponse({
+          assistantPanelMode: normalizeAssistantPanelMode(
+            stored[ASSISTANT_PANEL_MODE_STORAGE_KEY],
+          ),
+        });
+      },
+    );
     return true;
   }
   void (async () => {
