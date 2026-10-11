@@ -47,10 +47,6 @@ import {
   USERSCRIPT_VALUE_STORAGE_PREFIX,
 } from '../../userscript/application/storage-keys';
 
-// tabIds of open sidePanels managed by the panel-mode handler.
-// Used to ensure we close all panels before opening a new one.
-const openSidePanelTabIds = new Set<number>();
-
 import {
   applyUserscriptUpdate,
   UserscriptUpdateService,
@@ -371,6 +367,18 @@ const assistantSurface = new AssistantSurfaceCoordinator(
     extensionDiagnostics.warn('assistant-surface', event, error, details),
 );
 assistantSurface.install();
+
+api.storage.onChanged.addListener((changes) => {
+  const key = USERSCRIPT_SETTINGS_STORAGE_KEY;
+  if (!(key in changes)) return;
+  const newSettings = changes[key].newValue as
+    | { assistantPanelMode?: string }
+    | undefined;
+  if (!newSettings) return;
+  const mode = normalizeAssistantPanelMode(newSettings.assistantPanelMode);
+  assistantSurface.setSurfacePreference(mode);
+});
+
 installDeckToolbarEntry(api, {
   ...(api.sidebarAction
     ? {
@@ -911,46 +919,8 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
       );
       return true;
     }
-    // Open the panel synchronously while still in the user-gesture context,
-    // then read the panel mode preference and switch if needed.
-    // chrome.sidePanel.open() must be the first awaited call — never await
-    // anything before it, otherwise the gesture context is lost.
-    const openPromise = api.sidePanel
-      ?.open({ tabId })
-      .then(() => api.storage.local.get(USERSCRIPT_SETTINGS_STORAGE_KEY))
-      .then((stored) => {
-        const settings = normalizeUserscriptSettings(
-          stored[USERSCRIPT_SETTINGS_STORAGE_KEY],
-        );
-        return normalizeAssistantPanelMode(settings.assistantPanelMode);
-      })
-      .then((panelMode) => {
-        // Close all previously-opened sidePanels before opening a new one.
-        // chrome.sidePanel.close() throws synchronously when no panel is active,
-        // so we wrap the whole loop in try/catch to suppress every failure.
-        try {
-          for (const prevTabId of openSidePanelTabIds) {
-            if (api.sidePanel?.close) {
-              api.sidePanel.close({ tabId: prevTabId });
-            }
-          }
-        } catch {
-          // Ignore — close failures are expected when no panel is active.
-        } finally {
-          openSidePanelTabIds.clear();
-        }
-
-        if (panelMode === 'popup') {
-          // No sidePanel to manage after the loop above.
-          return assistantSurface.open(tabId, message.tab, 'popup');
-        }
-        // sidePanel mode: register this tab so we can close it next time.
-        openSidePanelTabIds.add(tabId);
-        return Promise.resolve();
-      })
-      .then(() => sendResponse({ ok: true }))
-      .catch((error) => sendResponse(userscriptBackgroundErrorResponse(error)));
-    void openPromise;
+    assistantSurface.open(tabId);
+    sendResponse({ ok: true });
     return true;
   }
   // External userscript bridge: allow userscripts to read assistantPanelMode setting

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-
+import { USERSCRIPT_SETTINGS_STORAGE_KEY } from '../../userscript/application/settings';
 import type { ExtensionBackgroundApi } from './api';
 import { AssistantSurfaceCoordinator } from './assistant-surface-background';
 import { assistantSurfaceLifecyclePortName } from './assistant-surface-path';
@@ -45,7 +45,9 @@ function api() {
     storage: {
       local: {
         get: vi.fn(async (key: string) =>
-          key === 'assistant-panel-mode.v1' ? {} : {},
+          key === USERSCRIPT_SETTINGS_STORAGE_KEY
+            ? { [USERSCRIPT_SETTINGS_STORAGE_KEY]: {} }
+            : {},
         ),
       },
     },

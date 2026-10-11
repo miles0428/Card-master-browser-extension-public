@@ -120,7 +120,7 @@ export class AssistantSurfaceCoordinator {
   private readonly activePanels = new Map<number, ExtensionPort>();
   private readonly openingTabs = new Set<number>();
   private readonly requestedTabs = new Map<number, AssistantWorkbenchTab>();
-  private readonly surface: AssistantSurface;
+  private surface: AssistantSurface;
 
   constructor(
     private readonly api: ExtensionBackgroundApi,
@@ -214,6 +214,30 @@ export class AssistantSurfaceCoordinator {
       this.openingTabs.delete(tabId);
     }
     await configuration;
+  }
+
+  /**
+   * Rebuild the factory surface when the panel mode preference changes.
+   *
+   * @param preference - The new panel mode ('sidePanel' or 'popup')
+   */
+  setSurfacePreference(preference: AssistantPanelMode): void {
+    // 1. Disconnect all old content-script connections
+    for (const [_tabId, port] of this.activePanels) {
+      try {
+        port.disconnect();
+      } catch {
+        // ignore
+      }
+    }
+
+    // 2. Clear state tracking
+    this.activePanels.clear();
+    this.openingTabs.clear();
+    this.requestedTabs.clear();
+
+    // 3. Replace the factory
+    this.surface = createAssistantSurface(this.api, preference);
   }
 
   async context(tabId: number): Promise<AssistantSurfaceContext> {

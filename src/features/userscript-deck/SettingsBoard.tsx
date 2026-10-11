@@ -934,6 +934,13 @@ export function SettingsBoard({
                 setAssistantPanelMode(checked ? 'popup' : 'sidePanel')
               }
             />
+            {assistantPanelMode === 'sidePanel' && (
+              <UiNotice tone="warning" title="侧边栏正常时不要开启此功能">
+                <p>
+                  若你的浏览器侧边栏能正常工作，请勿开启「弹出窗口」。开启后点击脚本工坊会同时出现侧边栏和弹出窗口。
+                </p>
+              </UiNotice>
+            )}
             <UiNotice title="检查状态">
               <p>
                 {lastUpdateCheckAt > 0
