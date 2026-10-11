@@ -2,7 +2,25 @@ import { describe, expect, it, vi } from 'vitest';
 import { USERSCRIPT_SETTINGS_STORAGE_KEY } from '../../userscript/application/settings';
 import type { ExtensionBackgroundApi } from './api';
 import { AssistantSurfaceCoordinator } from './assistant-surface-background';
+import { normalizeAssistantPanelMode } from './assistant-surface-background';
 import { assistantSurfaceLifecyclePortName } from './assistant-surface-path';
+
+describe('normalizeAssistantPanelMode', () => {
+  it('returns "popup" for "popup"', () => {
+    expect(normalizeAssistantPanelMode('popup')).toBe('popup');
+  });
+
+  it('returns "sidePanel" for "sidePanel"', () => {
+    expect(normalizeAssistantPanelMode('sidePanel')).toBe('sidePanel');
+  });
+
+  it.each([null, undefined, 0, 1, '', 'garbage', {}, []])(
+    'returns "sidePanel" for invalid value: %p',
+    (value) => {
+      expect(normalizeAssistantPanelMode(value)).toBe('sidePanel');
+    },
+  );
+});
 
 function event<Arguments extends unknown[]>() {
   type Listener = (...args: Arguments) => void;
@@ -284,5 +302,65 @@ describe('AssistantSurfaceCoordinator', () => {
     const coordinator = new AssistantSurfaceCoordinator(test.value);
 
     await expect(coordinator.open(7)).rejects.toThrow('sidebar unavailable');
+  });
+
+  describe('setSurfacePreference', () => {
+    it('switches to popup factory and creates a window', async () => {
+      const test = api();
+      const create = vi.fn(async () => undefined);
+      test.value.windows = { create } as ExtensionBackgroundApi['windows'];
+      test.value.runtime.getURL = vi.fn(
+        (path: string) => `safari-web-extension://id/${path}`,
+      );
+      const coordinator = new AssistantSurfaceCoordinator(test.value);
+
+      coordinator.setSurfacePreference('popup');
+      await coordinator.open(7);
+
+      expect(create).toHaveBeenCalled(); // popup creates a window
+      expect(test.open).not.toHaveBeenCalled(); // does not use sidePanel
+    });
+
+    it('switches back to sidePanel factory', async () => {
+      const test = api();
+      test.value.windows = {
+        create: vi.fn(async () => undefined),
+      } as ExtensionBackgroundApi['windows'];
+      const coordinator = new AssistantSurfaceCoordinator(test.value);
+      coordinator.setSurfacePreference('popup');
+
+      // Switch back to sidePanel
+      coordinator.setSurfacePreference('sidePanel');
+      await coordinator.open(7);
+
+      expect(test.open).toHaveBeenCalledWith({ tabId: 7 });
+      expect(
+        (test.value.windows as { create: ReturnType<typeof vi.fn> }).create,
+      ).not.toHaveBeenCalled();
+    });
+
+    it('clears activePanels and allows reopening after preference change', async () => {
+      const test = api();
+      const coordinator = new AssistantSurfaceCoordinator(test.value);
+      coordinator.install();
+
+      // Establish an active port for tab 7
+      const active = port(assistantSurfaceLifecyclePortName(7));
+      test.onConnect.emit(active.port);
+
+      // Switch preference — internal state must be cleared
+      coordinator.setSurfacePreference('popup');
+
+      // After state is cleared, open(7) should go through popup path
+      const create = vi.fn(async () => undefined);
+      test.value.windows = { create } as ExtensionBackgroundApi['windows'];
+      test.value.runtime.getURL = vi.fn(
+        (path: string) => `safari-web-extension://id/${path}`,
+      );
+      await coordinator.open(7);
+
+      expect(create).toHaveBeenCalled(); // popup path
+      expect(test.open).not.toHaveBeenCalled();
+    });
   });
 });
