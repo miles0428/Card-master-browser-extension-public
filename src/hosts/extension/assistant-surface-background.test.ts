@@ -44,9 +44,8 @@ function api() {
     },
     storage: {
       local: {
-        get: vi.fn(
-          async (key: string) =>
-            key === 'assistant-panel-mode.v1' ? {} : {},
+        get: vi.fn(async (key: string) =>
+          key === 'assistant-panel-mode.v1' ? {} : {},
         ),
       },
     },

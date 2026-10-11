@@ -10,7 +10,10 @@ export type UserscriptSettings = {
 
 export type UserscriptSettingsInput = Pick<
   UserscriptSettings,
-  'reloadAfterScriptChange' | 'updateIntervalDays' | 'updateEnabledOnly' | 'assistantPanelMode'
+  | 'reloadAfterScriptChange'
+  | 'updateIntervalDays'
+  | 'updateEnabledOnly'
+  | 'assistantPanelMode'
 >;
 
 export interface UserscriptSettingsController {

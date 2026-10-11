@@ -10,7 +10,6 @@ import {
   Keyboard,
   type LucideIcon,
   Moon,
-  PanelLeft,
   Radio,
   RotateCcw,
   Save,
@@ -505,7 +504,9 @@ export function SettingsBoard({
   const [updateIntervalDays, setUpdateIntervalDays] = useState(1);
   const [updateEnabledOnly, setUpdateEnabledOnly] = useState(true);
   const [lastUpdateCheckAt, setLastUpdateCheckAt] = useState(0);
-  const [assistantPanelMode, setAssistantPanelMode] = useState<'sidePanel' | 'popup'>('sidePanel');
+  const [assistantPanelMode, setAssistantPanelMode] = useState<
+    'sidePanel' | 'popup'
+  >('sidePanel');
   const [deckShortcut, setDeckShortcut] = useState(DEFAULT_DECK_SHORTCUT);
   const [busy, setBusy] = useState<BusyState>('load');
   const [status, setStatus] = useState('');
@@ -929,7 +930,9 @@ export function SettingsBoard({
               label="弹出窗口替代侧边栏"
               description="开启后，脚本工坊将以弹出窗口形式呈现，而非侧边栏面板。"
               checked={assistantPanelMode === 'popup'}
-              onChange={(checked) => setAssistantPanelMode(checked ? 'popup' : 'sidePanel')}
+              onChange={(checked) =>
+                setAssistantPanelMode(checked ? 'popup' : 'sidePanel')
+              }
             />
             <UiNotice title="检查状态">
               <p>

@@ -46,6 +46,11 @@ import {
   USERSCRIPT_PREINSTALL_STATE_STORAGE_KEY,
   USERSCRIPT_VALUE_STORAGE_PREFIX,
 } from '../../userscript/application/storage-keys';
+
+// tabIds of open sidePanels managed by the panel-mode handler.
+// Used to ensure we close all panels before opening a new one.
+const openSidePanelTabIds = new Set<number>();
+
 import {
   applyUserscriptUpdate,
   UserscriptUpdateService,
@@ -906,8 +911,8 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
       );
       return true;
     }
-    // Always open sidePanel synchronously while still in the user-gesture
-    // context, then decide whether to keep it or switch to popup.
+    // Open the panel synchronously while still in the user-gesture context,
+    // then read the panel mode preference and switch if needed.
     // chrome.sidePanel.open() must be the first awaited call — never await
     // anything before it, otherwise the gesture context is lost.
     const openPromise = api.sidePanel
@@ -920,15 +925,24 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return normalizeAssistantPanelMode(settings.assistantPanelMode);
       })
       .then((panelMode) => {
-        if (panelMode === 'popup') {
-          // Close the sidePanel we just opened and open a popup instead.
-          // sidePanel.close() is available in Chromium-based browsers.
-          if (api.sidePanel?.close) {
-            void api.sidePanel.close({ tabId });
+        // Close all previously-opened sidePanels before opening a new one.
+        for (const prevTabId of openSidePanelTabIds) {
+          try {
+            if (api.sidePanel?.close) {
+              void api.sidePanel.close({ tabId: prevTabId });
+            }
+          } catch {
+            // Ignore close failure; proceed to close the next one.
           }
+        }
+        openSidePanelTabIds.clear();
+
+        if (panelMode === 'popup') {
+          // No sidePanel to manage after the loop above.
           return assistantSurface.open(tabId, message.tab, 'popup');
         }
-        // sidePanel mode: keep the panel we already opened.
+        // sidePanel mode: register this tab so we can close it next time.
+        openSidePanelTabIds.add(tabId);
         return Promise.resolve();
       })
       .then(() => sendResponse({ ok: true }))
@@ -940,8 +954,9 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Userscript calls: chrome.runtime.sendMessage({ type: 'assistant-panel-mode-get' })
   // Response: { assistantPanelMode: 'sidePanel' | 'popup' }
   if (message.type === 'assistant-panel-mode-get') {
-    void api.storage.local.get(USERSCRIPT_SETTINGS_STORAGE_KEY).then(
-      (stored) => {
+    void api.storage.local
+      .get(USERSCRIPT_SETTINGS_STORAGE_KEY)
+      .then((stored) => {
         const settings = normalizeUserscriptSettings(
           stored[USERSCRIPT_SETTINGS_STORAGE_KEY],
         );
@@ -950,8 +965,7 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
             settings.assistantPanelMode,
           ),
         });
-      },
-    );
+      });
     return true;
   }
   void (async () => {
