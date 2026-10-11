@@ -10,6 +10,7 @@ import {
   Keyboard,
   type LucideIcon,
   Moon,
+  PanelLeft,
   Radio,
   RotateCcw,
   Save,
@@ -504,6 +505,7 @@ export function SettingsBoard({
   const [updateIntervalDays, setUpdateIntervalDays] = useState(1);
   const [updateEnabledOnly, setUpdateEnabledOnly] = useState(true);
   const [lastUpdateCheckAt, setLastUpdateCheckAt] = useState(0);
+  const [assistantPanelMode, setAssistantPanelMode] = useState<'sidePanel' | 'popup'>('sidePanel');
   const [deckShortcut, setDeckShortcut] = useState(DEFAULT_DECK_SHORTCUT);
   const [busy, setBusy] = useState<BusyState>('load');
   const [status, setStatus] = useState('');
@@ -524,6 +526,7 @@ export function SettingsBoard({
         setUpdateIntervalDays(settings.updateIntervalDays);
         setUpdateEnabledOnly(settings.updateEnabledOnly);
         setLastUpdateCheckAt(settings.lastUpdateCheckAt);
+        setAssistantPanelMode(settings.assistantPanelMode);
         setBusy(null);
       },
       (failure) => {
@@ -570,11 +573,13 @@ export function SettingsBoard({
         reloadAfterScriptChange,
         updateIntervalDays,
         updateEnabledOnly,
+        assistantPanelMode,
       });
       setReloadAfterScriptChange(settings.reloadAfterScriptChange);
       setUpdateIntervalDays(settings.updateIntervalDays);
       setUpdateEnabledOnly(settings.updateEnabledOnly);
       setLastUpdateCheckAt(settings.lastUpdateCheckAt);
+      setAssistantPanelMode(settings.assistantPanelMode);
       setStatus(
         settings.updateIntervalDays === 0
           ? '自动检查脚本更新已关闭。'
@@ -707,6 +712,7 @@ export function SettingsBoard({
         setUpdateIntervalDays(settings.updateIntervalDays);
         setUpdateEnabledOnly(settings.updateEnabledOnly);
         setLastUpdateCheckAt(settings.lastUpdateCheckAt);
+        setAssistantPanelMode(settings.assistantPanelMode);
       }
       setStatus(result.message);
       setError(result.status === 'partial');
@@ -918,6 +924,12 @@ export function SettingsBoard({
               description="关闭后也会检查当前处于停用状态、且允许检查更新的脚本。"
               checked={updateEnabledOnly}
               onChange={setUpdateEnabledOnly}
+            />
+            <UiToggle
+              label="弹出窗口替代侧边栏"
+              description="开启后，脚本工坊将以弹出窗口形式呈现，而非侧边栏面板。"
+              checked={assistantPanelMode === 'popup'}
+              onChange={(checked) => setAssistantPanelMode(checked ? 'popup' : 'sidePanel')}
             />
             <UiNotice title="检查状态">
               <p>

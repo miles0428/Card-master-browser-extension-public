@@ -65,7 +65,6 @@ import { resolveAssistantPageAttachment } from './assistant-page-observer';
 import { parseAssistantPortName } from './assistant-protocol';
 import { ExtensionAssistantService } from './assistant-service';
 import {
-  ASSISTANT_PANEL_MODE_STORAGE_KEY,
   AssistantSurfaceCoordinator,
   normalizeAssistantPanelMode,
 } from './assistant-surface-background';
@@ -907,30 +906,48 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
       );
       return true;
     }
-    // Read panel mode preference while still in user-gesture context, then
-    // pass it to open() so surface creation is synchronous (no async between
-    // surface.open() and user gesture).
-    void api.storage.local
-      .get(ASSISTANT_PANEL_MODE_STORAGE_KEY)
+    // Always open sidePanel synchronously while still in the user-gesture
+    // context, then decide whether to keep it or switch to popup.
+    // chrome.sidePanel.open() must be the first awaited call — never await
+    // anything before it, otherwise the gesture context is lost.
+    const openPromise = api.sidePanel
+      ?.open({ tabId })
+      .then(() => api.storage.local.get(USERSCRIPT_SETTINGS_STORAGE_KEY))
       .then((stored) => {
-        const panelMode = normalizeAssistantPanelMode(
-          stored[ASSISTANT_PANEL_MODE_STORAGE_KEY],
+        const settings = normalizeUserscriptSettings(
+          stored[USERSCRIPT_SETTINGS_STORAGE_KEY],
         );
-        return assistantSurface.open(tabId, message.tab, panelMode);
+        return normalizeAssistantPanelMode(settings.assistantPanelMode);
+      })
+      .then((panelMode) => {
+        if (panelMode === 'popup') {
+          // Close the sidePanel we just opened and open a popup instead.
+          // sidePanel.close() is available in Chromium-based browsers.
+          if (api.sidePanel?.close) {
+            void api.sidePanel.close({ tabId });
+          }
+          return assistantSurface.open(tabId, message.tab, 'popup');
+        }
+        // sidePanel mode: keep the panel we already opened.
+        return Promise.resolve();
       })
       .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse(userscriptBackgroundErrorResponse(error)));
+    void openPromise;
     return true;
   }
   // External userscript bridge: allow userscripts to read assistantPanelMode setting
   // Userscript calls: chrome.runtime.sendMessage({ type: 'assistant-panel-mode-get' })
   // Response: { assistantPanelMode: 'sidePanel' | 'popup' }
   if (message.type === 'assistant-panel-mode-get') {
-    void api.storage.local.get(ASSISTANT_PANEL_MODE_STORAGE_KEY).then(
+    void api.storage.local.get(USERSCRIPT_SETTINGS_STORAGE_KEY).then(
       (stored) => {
+        const settings = normalizeUserscriptSettings(
+          stored[USERSCRIPT_SETTINGS_STORAGE_KEY],
+        );
         sendResponse({
           assistantPanelMode: normalizeAssistantPanelMode(
-            stored[ASSISTANT_PANEL_MODE_STORAGE_KEY],
+            settings.assistantPanelMode,
           ),
         });
       },

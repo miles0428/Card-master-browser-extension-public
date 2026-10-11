@@ -8,6 +8,7 @@ import {
   assistantSurfaceLifecyclePortTabId,
   assistantSurfacePath,
 } from './assistant-surface-path';
+import { USERSCRIPT_SETTINGS_STORAGE_KEY } from '../../userscript/application/settings';
 
 type SurfaceFailureReporter = (
   event: string,
@@ -53,9 +54,6 @@ async function openPopupSurface(api: ExtensionBackgroundApi, path: string) {
 
 export type AssistantPanelMode = 'sidePanel' | 'popup';
 
-export const ASSISTANT_PANEL_MODE_STORAGE_KEY =
-  'assistant-panel-mode.v1';
-
 export const defaultAssistantPanelMode = (): AssistantPanelMode =>
   'sidePanel';
 
@@ -66,13 +64,21 @@ export function normalizeAssistantPanelMode(
   return 'sidePanel';
 }
 
+/**
+ * Read the assistant panel mode from the userscript settings store.
+ *
+ * Falls back to 'sidePanel' if no preference has been persisted yet.
+ */
 async function readAssistantPanelMode(
   api: ExtensionBackgroundApi,
 ): Promise<AssistantPanelMode> {
   const stored = (
-    await api.storage.local.get(ASSISTANT_PANEL_MODE_STORAGE_KEY)
-  )[ASSISTANT_PANEL_MODE_STORAGE_KEY];
-  return normalizeAssistantPanelMode(stored);
+    await api.storage.local.get(USERSCRIPT_SETTINGS_STORAGE_KEY)
+  )[USERSCRIPT_SETTINGS_STORAGE_KEY];
+  return normalizeAssistantPanelMode(
+    (stored as { assistantPanelMode?: string } | undefined)
+      ?.assistantPanelMode,
+  );
 }
 
 function createAssistantSurface(
