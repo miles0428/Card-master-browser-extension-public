@@ -926,16 +926,19 @@ api.runtime.onMessage.addListener((message, sender, sendResponse) => {
       })
       .then((panelMode) => {
         // Close all previously-opened sidePanels before opening a new one.
-        for (const prevTabId of openSidePanelTabIds) {
-          try {
+        // chrome.sidePanel.close() throws synchronously when no panel is active,
+        // so we wrap the whole loop in try/catch to suppress every failure.
+        try {
+          for (const prevTabId of openSidePanelTabIds) {
             if (api.sidePanel?.close) {
-              void api.sidePanel.close({ tabId: prevTabId });
+              api.sidePanel.close({ tabId: prevTabId });
             }
-          } catch {
-            // Ignore close failure; proceed to close the next one.
           }
+        } catch {
+          // Ignore — close failures are expected when no panel is active.
+        } finally {
+          openSidePanelTabIds.clear();
         }
-        openSidePanelTabIds.clear();
 
         if (panelMode === 'popup') {
           // No sidePanel to manage after the loop above.
